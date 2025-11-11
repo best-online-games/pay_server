@@ -10,7 +10,14 @@ func (uc *UseCases) EnsureOpenVPNClient(ctx context.Context, name string) (strin
 		return "", errors.New("openvpn manager is not configured")
 	}
 
-	return uc.openvpnPortal.EnsureClientConfig(ctx, name)
+	cfg, err := uc.openvpnPortal.EnsureClientConfig(ctx, name)
+	if err != nil {
+		uc.logger.Error("ensure client failed", "client", name, "error", err)
+		return "", err
+	}
+
+	uc.logger.Info("ensure client succeeded", "client", name)
+	return cfg, nil
 }
 
 func (uc *UseCases) RevokeOpenVPNClient(ctx context.Context, name string) error {
@@ -18,5 +25,11 @@ func (uc *UseCases) RevokeOpenVPNClient(ctx context.Context, name string) error 
 		return errors.New("openvpn manager is not configured")
 	}
 
-	return uc.openvpnPortal.RevokeClient(ctx, name)
+	if err := uc.openvpnPortal.RevokeClient(ctx, name); err != nil {
+		uc.logger.Error("revoke client failed", "client", name, "error", err)
+		return err
+	}
+
+	uc.logger.Info("revoke client succeeded", "client", name)
+	return nil
 }

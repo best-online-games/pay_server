@@ -17,13 +17,17 @@ func (h Handlers) EnsureOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.Logger.Info("ensure OpenVPN client requested", "client", name)
+
 	config, err := h.service.EnsureOpenVPNClient(r.Context(), name)
 	if err != nil {
+		h.Logger.Error("ensure OpenVPN client failed", "client", name, "error", err)
 		h.handleOpenVPNError(w, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	h.Logger.Info("ensure OpenVPN client success", "client", name)
 	_, _ = w.Write([]byte(config))
 }
 
@@ -34,12 +38,16 @@ func (h Handlers) RevokeOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.Logger.Info("revoke OpenVPN client requested", "client", name)
+
 	err = h.service.RevokeOpenVPNClient(r.Context(), name)
 	if err != nil {
+		h.Logger.Error("revoke OpenVPN client failed", "client", name, "error", err)
 		h.handleOpenVPNError(w, err)
 		return
 	}
 
+	h.Logger.Info("revoke OpenVPN client success", "client", name)
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -39,6 +39,7 @@ func New(logger *slog.Logger, cfg Config) *Manager {
 func (m *Manager) EnsureClientConfig(ctx context.Context, rawName string) (string, error) {
 	clientName, err := sanitizeName(rawName)
 	if err != nil {
+		m.logger.Error("ensure client: invalid name", "raw", rawName, "error", err)
 		return "", err
 	}
 
@@ -64,6 +65,7 @@ func (m *Manager) EnsureClientConfig(ctx context.Context, rawName string) (strin
 
 	if status != clientStatusValid {
 		if err := m.buildClientCertificate(ctx, clientName); err != nil {
+			m.logger.Error("ensure client: build certificate failed", "client", clientName, "error", err)
 			return "", err
 		}
 	}
@@ -77,6 +79,7 @@ func (m *Manager) EnsureClientConfig(ctx context.Context, rawName string) (strin
 		return "", err
 	}
 
+	m.logger.Info("ensure client config prepared", "client", clientName)
 	return configText, nil
 }
 
@@ -84,6 +87,7 @@ func (m *Manager) EnsureClientConfig(ctx context.Context, rawName string) (strin
 func (m *Manager) RevokeClient(ctx context.Context, rawName string) error {
 	clientName, err := sanitizeName(rawName)
 	if err != nil {
+		m.logger.Error("revoke client: invalid name", "raw", rawName, "error", err)
 		return err
 	}
 
@@ -96,18 +100,22 @@ func (m *Manager) RevokeClient(ctx context.Context, rawName string) error {
 	}
 
 	if status == clientStatusRevoked {
+		m.logger.Warn("revoke client: already revoked", "client", clientName)
 		return openvpn_domain.ErrClientAlreadyRevoked
 	}
 
 	if err := m.runEasyRSA(ctx, "--batch", "revoke", clientName); err != nil {
+		m.logger.Error("revoke client: easyrsa revoke failed", "client", clientName, "error", err)
 		return err
 	}
 
 	if err := m.runEasyRSA(ctx, "--batch", "--days=3650", "gen-crl"); err != nil {
+		m.logger.Error("revoke client: easyrsa gen-crl failed", "client", clientName, "error", err)
 		return err
 	}
 
 	if err := m.refreshCRL(); err != nil {
+		m.logger.Error("revoke client: refresh CRL failed", "client", clientName, "error", err)
 		return err
 	}
 
@@ -115,6 +123,7 @@ func (m *Manager) RevokeClient(ctx context.Context, rawName string) error {
 		return fmt.Errorf("remove cached config: %w", err)
 	}
 
+	m.logger.Info("revoke client completed", "client", clientName)
 	return nil
 }
 
@@ -128,6 +137,7 @@ func (m *Manager) lookupClientStatus(name string) (string, error) {
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
+		m.logger.Error("read index failed", "path", indexPath, "error", err)
 		if errors.Is(err, os.ErrNotExist) {
 			return "", openvpn_domain.ErrClientNotFound
 		}
@@ -150,6 +160,7 @@ func (m *Manager) lookupClientStatus(name string) (string, error) {
 	}
 
 	if lastMatch == "" {
+		m.logger.Warn("client not found in index", "client", name)
 		return "", openvpn_domain.ErrClientNotFound
 	}
 
@@ -166,6 +177,7 @@ func (m *Manager) buildClientCertificate(ctx context.Context, name string) error
 }
 
 func (m *Manager) runEasyRSA(ctx context.Context, args ...string) error {
+	m.logger.Info("running easyrsa", "args", args)
 	cmd := exec.CommandContext(ctx, "./easyrsa", args...)
 	cmd.Dir = m.cfg.easyRSADir()
 
@@ -179,6 +191,7 @@ func (m *Manager) runEasyRSA(ctx context.Context, args ...string) error {
 		return fmt.Errorf("easyrsa %v: %w: %s", args, err, output.String())
 	}
 
+	m.logger.Info("easyrsa command succeeded", "args", args)
 	return nil
 }
 
