@@ -12,13 +12,9 @@ func (r *Router) AppendRoutes(config Config, handlers *handlers.Handlers) {
 
 	apiV1Subrouter := r.router.PathPrefix(apiV1Prefix).Subrouter()
 
-	accessGuard := middlewarehelpers.HostOriginGuard(
-		[]string{"localhost", "127.0.0.1", "::1", "pay.bog-best-online-games.ru"},
-		[]string{"https://pay.bog-best-online-games.ru"},
-	)
 	recoverMiddleware := middlewarehelpers.Recover(handlers.Logger)
 	requestLogger := middlewarehelpers.RequestLogger(handlers.Logger)
-	commonChain := middlewarehelpers.And(accessGuard, recoverMiddleware, requestLogger)
+	commonChain := middlewarehelpers.And(recoverMiddleware, requestLogger)
 
 	routes := []Route{
 		{

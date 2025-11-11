@@ -37,18 +37,31 @@ func New(logger *slog.Logger, config Config, handler http.Handler) *Server {
 	s := Server{
 		logger: logger,
 		server: server,
+		config: config,
 	}
 
 	return &s
 }
 
 func (a *Server) Start(ctx context.Context) error {
-	a.logger.Info(a.config.StartMsg)
+	addr := a.server.Addr
+	if addr == "" {
+		addr = ":http"
+	}
+
+	startMsg := a.config.StartMsg
+	if startMsg == "" {
+		startMsg = "http server listening"
+	}
+
+	a.logger.Info(startMsg, "addr", addr)
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		<-ctx.Done()
+
+		a.logger.Info("http server shutdown initiated")
 
 		ctx, cancel := context.WithTimeout(context.Background(), a.config.ShutdownTimeout)
 		defer cancel()
@@ -65,7 +78,7 @@ func (a *Server) Start(ctx context.Context) error {
 		err := a.server.ListenAndServe()
 		if err != nil {
 			if errors.Is(err, http.ErrServerClosed) {
-				// ok
+				a.logger.Info("http server stopped")
 			} else {
 				return err
 			}
@@ -78,6 +91,8 @@ func (a *Server) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	a.logger.Info("http server shutdown complete")
 
 	return nil
 }
