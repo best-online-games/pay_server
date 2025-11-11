@@ -9,10 +9,9 @@ FROM golang:1.22.3-alpine as builder
 COPY --from=modules /go/pkg /go/pkg
 COPY . /app
 WORKDIR /app
-RUN CGO_ENABLED=0 GOOS=linux  \
-    go build  -o /bin/app ./cmd/service/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/app ./cmd/service
 
 # Step 3: Final
 FROM scratch
-COPY --from=builder bin/app /
-CMD ["/app"]
+COPY --from=builder /bin/app /app
+ENTRYPOINT ["/app"]

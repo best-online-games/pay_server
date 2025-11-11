@@ -23,10 +23,10 @@
     docker compose -f docker-compose.prod.yml up -d --build
     ```
 
-Команда собирает образ через `docker/prod/Dockerfile`, пробрасывает порт `HTTP_PORT` и маунтит две директории:
+Команда собирает образ (используется `docker/prod/Dockerfile`) и маунтит директории:
 
-- `${OPENVPN_SERVER_DIR}` → `/etc/openvpn/server` (живая установка OpenVPN и easy-rsa)
-- `${OPENVPN_CLIENT_EXPORT_DIR}` → `/root` (куда сервис будет класть готовые \*.ovpn файлы)
+- `./var/openvpn/server` → `/data/openvpn/server` (хранилище easy-rsa, client-common.txt и т.д.)
+- `./var/openvpn/clients` → `/data/openvpn/clients` (готовые \*.ovpn файлы)
 
 Остановить сервис можно стандартной командой:
 
@@ -41,54 +41,25 @@ docker compose -f docker-compose.prod.yml down
 .
 ├── cmd
 │   └── service
-└── internal
-    ├── app
-    │   ├── adapters
-    │   │   ├── primary
-    │   │   │   ├── grpc-adapter
-    │   │   │   │   ├── generated
-    │   │   │   │   └── handlers
-    │   │   │   ├── http-adapter
-    │   │   │   │   ├── handlers
-    │   │   │   │   └── router
-    │   │   │   ├── kafka-adapter-subscriber
-    │   │   │   │   ├── kafka-handlers
-    │   │   │   │   └── kafka-queue
-    │   │   │   ├── nats-adapter-subscriber
-    │   │   │   │   └── nats-handlers
-    │   │   │   ├── os-signal-adapter
-    │   │   │   └── pprof-adapter
-    │   │   └── secondary
-    │   │       ├── gateways
-    │   │       │   └── entity5-gateway
-    │   │       ├── grpc-adapter
-    │   │       │   └── generated
-    │   │       ├── kafka-adapter-publisher
-    │   │       ├── kafka-adapter-publisher2
-    │   │       │   └── kafka-client
-    │   │       ├── nats-adapter-publisher
-    │   │       └── repositories
-    │   │           ├── entity1-repository
-    │   │           ├── entity2-repository
-    │   │           ├── entity3-repository
-    │   │           └── entity4-repository
-    │   ├── application
-    │   │   └── usecases
-    │   ├── config
-    │   └── domain
-    │       ├── entity1
-    │       ├── entity2
-    │       ├── entity3
-    │       ├── entity4
-    │       └── entity5
-    └── pkg
-        ├── clickhouse
-        ├── helpers
-        ├── http-server
-        ├── middleware-helpers
-        ├── mongo
-        ├── postgres
-        └── provider-helpers
+├── internal
+│   ├── app
+│   │   ├── adapters
+│   │   │   ├── primary
+│   │   │   │   └── http-adapter
+│   │   │   └── secondary
+│   │   │       └── openvpn
+│   │   ├── application
+│   │   │   └── usecases
+│   │   ├── config
+│   │   └── domain
+│   │       └── openvpn
+│   └── pkg
+│       ├── http-server
+│       └── middleware-helpers
+└── var
+    └── openvpn
+        ├── clients
+        └── server
 ```
 
 ## В разработке

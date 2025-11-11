@@ -19,12 +19,6 @@ func (r *Router) AppendRoutes(config Config, handlers *handlers.Handlers) {
 
 	routes := []Route{
 		{
-			Name:    "method1",
-			Path:    "/method1",
-			Method:  http.MethodPost,
-			Handler: middlewarehelpers.And(accessGuard)(http.HandlerFunc(handlers.Get)),
-		},
-		{
 			Name:    "openvpn-certificate",
 			Path:    "/openvpn/certificates",
 			Method:  http.MethodPost,
