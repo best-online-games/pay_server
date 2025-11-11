@@ -1,0 +1,17 @@
+services:
+  pay-server:
+    container_name: "pay-server"
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: docker/prod/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./var/openvpn/server:/data/openvpn/server"
+      - "./var/openvpn/clients:/data/openvpn/clients"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

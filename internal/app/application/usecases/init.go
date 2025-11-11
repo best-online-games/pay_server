@@ -16,6 +16,8 @@ type UseCases struct {
 	gateway               gateway
 	kafkaAdapterPublisher Entity1Sender
 	natsAdapterPublisher  Entity1Sender
+
+	openvpnManager openvpnManager
 }
 
 type Config struct {
@@ -35,6 +37,11 @@ type gateway interface {
 	Get(ctx context.Context, input struct{}) (entities []entity5.Entity5, err error)
 }
 
+type openvpnManager interface {
+	EnsureClientConfig(ctx context.Context, client string) (string, error)
+	RevokeClient(ctx context.Context, client string) error
+}
+
 func New(
 	l *slog.Logger,
 	cfg Config,
@@ -42,6 +49,7 @@ func New(
 	gateway gateway,
 	kafkaAdapterPublisher Entity1Sender,
 	natsAdapterPublisher Entity1Sender,
+	openvpnManager openvpnManager,
 ) *UseCases {
 	return &UseCases{
 		logger:                l,
@@ -50,5 +58,6 @@ func New(
 		gateway:               gateway,
 		kafkaAdapterPublisher: kafkaAdapterPublisher,
 		natsAdapterPublisher:  natsAdapterPublisher,
+		openvpnManager:        openvpnManager,
 	}
 }

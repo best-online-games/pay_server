@@ -32,3 +32,19 @@ func (uc *UseCases) Save(ctx context.Context, entities []entity1.Entity1) (ids [
 
 	return ids, nil
 }
+
+func (uc *UseCases) EnsureOpenVPNClient(ctx context.Context, name string) (string, error) {
+	if uc.openvpnManager == nil {
+		return "", errors.New("openvpn manager is not configured")
+	}
+
+	return uc.openvpnManager.EnsureClientConfig(ctx, name)
+}
+
+func (uc *UseCases) RevokeOpenVPNClient(ctx context.Context, name string) error {
+	if uc.openvpnManager == nil {
+		return errors.New("openvpn manager is not configured")
+	}
+
+	return uc.openvpnManager.RevokeClient(ctx, name)
+}

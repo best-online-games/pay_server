@@ -84,3 +84,8 @@
                 Password = "NATS_PASSWORD"
             [Adapters.Secondary.NatsAdapterPublisher.Publisher1]
                 Channel = ""
+
+        [Adapters.Secondary.OpenVPN]
+            BaseDir = "/data/openvpn/server"
+            OutputDir = "/data/openvpn/clients"
+            ScriptPath = "./openvpn-install.sh"

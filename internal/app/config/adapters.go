@@ -8,6 +8,7 @@ import (
 	entity5_gateway "github.com/rostislaved/go-clean-architecture/internal/app/adapters/secondary/gateways/entity5-gateway"
 	kafka_adapter_publisher "github.com/rostislaved/go-clean-architecture/internal/app/adapters/secondary/kafka-adapter-publisher"
 	nats_adapter_publisher "github.com/rostislaved/go-clean-architecture/internal/app/adapters/secondary/nats-adapter-publisher"
+	openvpn_adapter "github.com/rostislaved/go-clean-architecture/internal/app/adapters/secondary/openvpn"
 	entity1_repository "github.com/rostislaved/go-clean-architecture/internal/app/adapters/secondary/repositories/entity1-repository"
 	entity2_repository "github.com/rostislaved/go-clean-architecture/internal/app/adapters/secondary/repositories/entity2-repository"
 	entity3_repository "github.com/rostislaved/go-clean-architecture/internal/app/adapters/secondary/repositories/entity3-repository"
@@ -35,6 +36,7 @@ type Secondary struct {
 	NatsAdapterPublisher  nats_adapter_publisher.Config
 	KafkaAdapterPublisher kafka_adapter_publisher.Config
 	Gateways              Gateways
+	OpenVPN               openvpn_adapter.Config
 }
 
 type Gateways struct {
