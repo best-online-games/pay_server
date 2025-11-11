@@ -12,6 +12,7 @@ WORKDIR /app
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/app ./cmd/service
 
 # Step 3: Final
-FROM scratch
+FROM alpine:3.20
+RUN apk add --no-cache bash
 COPY --from=builder /bin/app /app
 ENTRYPOINT ["/app"]
