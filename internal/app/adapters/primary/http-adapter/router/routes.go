@@ -12,9 +12,10 @@ func (r *Router) AppendRoutes(config Config, handlers *handlers.Handlers) {
 
 	apiV1Subrouter := r.router.PathPrefix(apiV1Prefix).Subrouter()
 
+	cors := middlewarehelpers.CORS()
 	recoverMiddleware := middlewarehelpers.Recover(handlers.Logger)
 	requestLogger := middlewarehelpers.RequestLogger(handlers.Logger)
-	commonChain := middlewarehelpers.And(recoverMiddleware, requestLogger)
+	commonChain := middlewarehelpers.And(cors, recoverMiddleware, requestLogger)
 
 	routes := []Route{
 		{
