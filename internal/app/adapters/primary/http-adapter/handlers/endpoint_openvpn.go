@@ -11,6 +11,8 @@ import (
 )
 
 func (h Handlers) EnsureOpenVPNClient(w http.ResponseWriter, r *http.Request) {
+	setCORSHeaders(w)
+
 	name, err := readClientName(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -32,6 +34,8 @@ func (h Handlers) EnsureOpenVPNClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handlers) RevokeOpenVPNClient(w http.ResponseWriter, r *http.Request) {
+	setCORSHeaders(w)
+
 	name, err := readClientName(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -86,4 +90,11 @@ func readClientName(r *http.Request) (string, error) {
 	}
 
 	return name, nil
+}
+
+// setCORSHeaders ensures responses carry permissive CORS headers even if middleware is bypassed.
+func setCORSHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
