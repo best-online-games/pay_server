@@ -1,4 +1,4 @@
-package openvpn
+package internal
 
 import (
 	"bytes"
@@ -13,30 +13,37 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-
-	openvpn_domain "github.com/rostislaved/go-clean-architecture/internal/app/domain/openvpn"
 )
 
-type Manager struct {
-	logger *slog.Logger
-	cfg    Config
+var (
+	ErrInvalidClientName    = errors.New("openvpn: invalid client name")
+	ErrClientNotFound       = errors.New("openvpn: client not found")
+	ErrClientAlreadyRevoked = errors.New("openvpn: client already revoked")
+)
 
-	mu sync.Mutex
+type OpenVPNManager struct {
+	logger    *slog.Logger
+	baseDir   string
+	outputDir string
+	mu        sync.Mutex
 }
 
-func New(logger *slog.Logger, cfg Config) *Manager {
-	cfg.normalize()
+func NewOpenVPNManager(logger *slog.Logger, baseDir, outputDir string) *OpenVPNManager {
+	if baseDir == "" {
+		baseDir = "/data/openvpn/server"
+	}
+	if outputDir == "" {
+		outputDir = "/data/openvpn/clients"
+	}
 
-	return &Manager{
-		logger: logger,
-		cfg:    cfg,
+	return &OpenVPNManager{
+		logger:    logger,
+		baseDir:   baseDir,
+		outputDir: outputDir,
 	}
 }
 
-// EnsureClientConfig returns the OpenVPN client configuration for the provided
-// name. If the client does not exist, a new certificate is created using the
-// same procedure as openvpn-install.sh, stored on disk and returned.
-func (m *Manager) EnsureClientConfig(ctx context.Context, rawName string) (string, error) {
+func (m *OpenVPNManager) EnsureClientConfig(ctx context.Context, rawName string) (string, error) {
 	clientName, err := sanitizeName(rawName)
 	if err != nil {
 		m.logger.Error("ensure client: invalid name", "raw", rawName, "error", err)
@@ -46,24 +53,25 @@ func (m *Manager) EnsureClientConfig(ctx context.Context, rawName string) (strin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if data, err := os.ReadFile(m.cfg.clientConfigPath(clientName)); err == nil {
+	configPath := m.clientConfigPath(clientName)
+	if data, err := os.ReadFile(configPath); err == nil {
 		return string(data), nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("read client config: %w", err)
 	}
 
 	status, err := m.lookupClientStatus(clientName)
-	if err != nil && !errors.Is(err, openvpn_domain.ErrClientNotFound) {
+	if err != nil && !errors.Is(err, ErrClientNotFound) {
 		return "", err
 	}
 
-	if status == clientStatusRevoked {
+	if status == "R" {
 		if err := m.removeClientArtifacts(clientName); err != nil {
 			return "", err
 		}
 	}
 
-	if status != clientStatusValid {
+	if status != "V" {
 		if err := m.buildClientCertificate(ctx, clientName); err != nil {
 			m.logger.Error("ensure client: build certificate failed", "client", clientName, "error", err)
 			return "", err
@@ -83,8 +91,7 @@ func (m *Manager) EnsureClientConfig(ctx context.Context, rawName string) (strin
 	return configText, nil
 }
 
-// RevokeClient revokes an existing certificate and refreshes the CRL.
-func (m *Manager) RevokeClient(ctx context.Context, rawName string) error {
+func (m *OpenVPNManager) RevokeClient(ctx context.Context, rawName string) error {
 	clientName, err := sanitizeName(rawName)
 	if err != nil {
 		m.logger.Error("revoke client: invalid name", "raw", rawName, "error", err)
@@ -99,9 +106,9 @@ func (m *Manager) RevokeClient(ctx context.Context, rawName string) error {
 		return err
 	}
 
-	if status == clientStatusRevoked {
+	if status == "R" {
 		m.logger.Warn("revoke client: already revoked", "client", clientName)
-		return openvpn_domain.ErrClientAlreadyRevoked
+		return ErrClientAlreadyRevoked
 	}
 
 	if err := m.runEasyRSA(ctx, "--batch", "revoke", clientName); err != nil {
@@ -119,7 +126,7 @@ func (m *Manager) RevokeClient(ctx context.Context, rawName string) error {
 		return err
 	}
 
-	if err := os.Remove(m.cfg.clientConfigPath(clientName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(m.clientConfigPath(clientName)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove cached config: %w", err)
 	}
 
@@ -127,21 +134,15 @@ func (m *Manager) RevokeClient(ctx context.Context, rawName string) error {
 	return nil
 }
 
-const (
-	clientStatusValid   = "V"
-	clientStatusRevoked = "R"
-)
-
-func (m *Manager) lookupClientStatus(name string) (string, error) {
-	indexPath := filepath.Join(m.cfg.easyRSADir(), "pki", "index.txt")
+func (m *OpenVPNManager) lookupClientStatus(name string) (string, error) {
+	indexPath := filepath.Join(m.baseDir, "easy-rsa", "pki", "index.txt")
 
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		m.logger.Error("read index failed", "path", indexPath, "error", err)
 		if errors.Is(err, os.ErrNotExist) {
-			return "", openvpn_domain.ErrClientNotFound
+			return "", ErrClientNotFound
 		}
-
 		return "", fmt.Errorf("read index.txt: %w", err)
 	}
 
@@ -161,25 +162,20 @@ func (m *Manager) lookupClientStatus(name string) (string, error) {
 
 	if lastMatch == "" {
 		m.logger.Warn("client not found in index", "client", name)
-		return "", openvpn_domain.ErrClientNotFound
+		return "", ErrClientNotFound
 	}
 
 	return string(lastMatch[0]), nil
 }
 
-func (m *Manager) buildClientCertificate(ctx context.Context, name string) error {
-	args := []string{"--batch", "--days=3650", "build-client-full", name, "nopass"}
-	if err := m.runEasyRSA(ctx, args...); err != nil {
-		return err
-	}
-
-	return nil
+func (m *OpenVPNManager) buildClientCertificate(ctx context.Context, name string) error {
+	return m.runEasyRSA(ctx, "--batch", "--days=3650", "build-client-full", name, "nopass")
 }
 
-func (m *Manager) runEasyRSA(ctx context.Context, args ...string) error {
+func (m *OpenVPNManager) runEasyRSA(ctx context.Context, args ...string) error {
 	m.logger.Info("running easyrsa", "args", args)
 	cmd := exec.CommandContext(ctx, "./easyrsa", args...)
-	cmd.Dir = m.cfg.easyRSADir()
+	cmd.Dir = filepath.Join(m.baseDir, "easy-rsa")
 
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -187,7 +183,6 @@ func (m *Manager) runEasyRSA(ctx context.Context, args ...string) error {
 
 	if err := cmd.Run(); err != nil {
 		m.logger.Error("easyrsa command failed", "args", args, "output", output.String(), "error", err)
-
 		return fmt.Errorf("easyrsa %v: %w: %s", args, err, output.String())
 	}
 
@@ -195,33 +190,38 @@ func (m *Manager) runEasyRSA(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func (m *Manager) composeClientConfig(name string) (string, error) {
+func (m *OpenVPNManager) composeClientConfig(name string) (string, error) {
 	var builder strings.Builder
 
-	if err := m.appendFile(&builder, m.cfg.clientCommonPath()); err != nil {
+	clientCommonPath := filepath.Join(m.baseDir, "client-common.txt")
+	if err := m.appendFile(&builder, clientCommonPath); err != nil {
 		return "", err
 	}
 
-	if err := m.appendWrappedFile(&builder, "<ca>\n", "\n</ca>\n", m.cfg.caCertPath()); err != nil {
+	caCertPath := filepath.Join(m.baseDir, "easy-rsa", "pki", "ca.crt")
+	if err := m.appendWrappedFile(&builder, "<ca>\n", "\n</ca>\n", caCertPath); err != nil {
 		return "", err
 	}
 
-	if err := m.appendWrappedFile(&builder, "<cert>\n", "\n</cert>\n", m.cfg.issuedCertPath(name), "-----BEGIN CERTIFICATE-----"); err != nil {
+	issuedCertPath := filepath.Join(m.baseDir, "easy-rsa", "pki", "issued", name+".crt")
+	if err := m.appendWrappedFile(&builder, "<cert>\n", "\n</cert>\n", issuedCertPath, "-----BEGIN CERTIFICATE-----"); err != nil {
 		return "", err
 	}
 
-	if err := m.appendWrappedFile(&builder, "<key>\n", "\n</key>\n", m.cfg.privateKeyPath(name)); err != nil {
+	privateKeyPath := filepath.Join(m.baseDir, "easy-rsa", "pki", "private", name+".key")
+	if err := m.appendWrappedFile(&builder, "<key>\n", "\n</key>\n", privateKeyPath); err != nil {
 		return "", err
 	}
 
-	if err := m.appendWrappedFile(&builder, "<tls-crypt>\n", "\n</tls-crypt>\n", m.cfg.tlsAuthKeyPath(), "-----BEGIN OpenVPN Static key-----"); err != nil {
+	tlsAuthKeyPath := filepath.Join(m.baseDir, "tc.key")
+	if err := m.appendWrappedFile(&builder, "<tls-crypt>\n", "\n</tls-crypt>\n", tlsAuthKeyPath, "-----BEGIN OpenVPN Static key-----"); err != nil {
 		return "", err
 	}
 
 	return builder.String(), nil
 }
 
-func (m *Manager) appendFile(builder *strings.Builder, path string) error {
+func (m *OpenVPNManager) appendFile(builder *strings.Builder, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
@@ -235,15 +235,15 @@ func (m *Manager) appendFile(builder *strings.Builder, path string) error {
 	return nil
 }
 
-func (m *Manager) appendWrappedFile(builder *strings.Builder, prefix, suffix, path string, markers ...string) error {
+func (m *OpenVPNManager) appendWrappedFile(builder *strings.Builder, prefix, suffix, path string, markers ...string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 
 	if len(markers) > 0 {
-		if trimmed := tailFromMarker(data, markers[0]); trimmed != nil {
-			data = trimmed
+		if idx := bytes.Index(data, []byte(markers[0])); idx != -1 {
+			data = data[idx:]
 		}
 	}
 
@@ -257,17 +257,8 @@ func (m *Manager) appendWrappedFile(builder *strings.Builder, prefix, suffix, pa
 	return nil
 }
 
-func tailFromMarker(data []byte, marker string) []byte {
-	idx := bytes.Index(data, []byte(marker))
-	if idx == -1 {
-		return data
-	}
-
-	return data[idx:]
-}
-
-func (m *Manager) writeClientConfig(name, contents string) error {
-	path := m.cfg.clientConfigPath(name)
+func (m *OpenVPNManager) writeClientConfig(name, contents string) error {
+	path := m.clientConfigPath(name)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("ensure client config dir: %w", err)
@@ -280,11 +271,11 @@ func (m *Manager) writeClientConfig(name, contents string) error {
 	return nil
 }
 
-func (m *Manager) removeClientArtifacts(name string) error {
+func (m *OpenVPNManager) removeClientArtifacts(name string) error {
 	paths := []string{
-		m.cfg.issuedCertPath(name),
-		m.cfg.privateKeyPath(name),
-		m.cfg.requestPath(name),
+		filepath.Join(m.baseDir, "easy-rsa", "pki", "issued", name+".crt"),
+		filepath.Join(m.baseDir, "easy-rsa", "pki", "private", name+".key"),
+		filepath.Join(m.baseDir, "easy-rsa", "pki", "reqs", name+".req"),
 	}
 
 	for _, path := range paths {
@@ -296,9 +287,9 @@ func (m *Manager) removeClientArtifacts(name string) error {
 	return nil
 }
 
-func (m *Manager) refreshCRL() error {
-	source := m.cfg.crlSourcePath()
-	target := m.cfg.crlTargetPath()
+func (m *OpenVPNManager) refreshCRL() error {
+	source := filepath.Join(m.baseDir, "easy-rsa", "pki", "crl.pem")
+	target := filepath.Join(m.baseDir, "crl.pem")
 
 	var uid = -1
 	var gid = -1
@@ -323,6 +314,10 @@ func (m *Manager) refreshCRL() error {
 	return nil
 }
 
+func (m *OpenVPNManager) clientConfigPath(name string) string {
+	return filepath.Join(m.outputDir, name+".ovpn")
+}
+
 func copyFile(src, dst string, perm os.FileMode) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
@@ -345,17 +340,13 @@ func copyFile(src, dst string, perm os.FileMode) error {
 		return err
 	}
 
-	if err := os.Rename(tmpPath, dst); err != nil {
-		return err
-	}
-
-	return nil
+	return os.Rename(tmpPath, dst)
 }
 
 func sanitizeName(input string) (string, error) {
 	clean := strings.TrimSpace(input)
 	if clean == "" {
-		return "", openvpn_domain.ErrInvalidClientName
+		return "", ErrInvalidClientName
 	}
 
 	var builder strings.Builder
@@ -369,7 +360,7 @@ func sanitizeName(input string) (string, error) {
 
 	name := builder.String()
 	if name == "" {
-		return "", openvpn_domain.ErrInvalidClientName
+		return "", ErrInvalidClientName
 	}
 
 	return name, nil

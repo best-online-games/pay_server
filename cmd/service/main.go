@@ -5,8 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/rostislaved/go-clean-architecture/internal/app"
-	"github.com/rostislaved/go-clean-architecture/internal/app/config"
+	"github.com/rostislaved/go-clean-architecture/internal"
 )
 
 func main() {
@@ -14,28 +13,23 @@ func main() {
 
 	logger.Info("bootstrapping pay_server service")
 
-	cfg, loadedFromFile, err := config.New()
+	cfg, err := internal.LoadConfig()
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
 
-	if loadedFromFile {
-		logger.Info("config loaded",
-			"path", "config.toml",
-			"http_port", cfg.Adapters.Primary.HttpAdapter.Server.Port,
-		)
-	} else {
-		logger.Warn("config.toml not found, using built-in defaults",
-			"http_port", cfg.Adapters.Primary.HttpAdapter.Server.Port,
-		)
-	}
+	logger.Info("config loaded",
+		"http_port", cfg.Port,
+		"openvpn_base_dir", cfg.OpenVPNBaseDir,
+		"openvpn_output_dir", cfg.OpenVPNOutputDir,
+	)
 
-	application := app.New(logger, cfg)
+	server := internal.NewServer(logger, cfg)
 
-	logger.Info("application constructed, starting adapters")
+	logger.Info("server constructed, starting")
 
-	if err := application.Start(context.Background()); err != nil {
+	if err := server.Start(context.Background()); err != nil {
 		logger.Error("service stopped", "error", err.Error())
 		os.Exit(1)
 	}
